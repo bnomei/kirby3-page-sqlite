@@ -18,7 +18,7 @@ final class SQLitePagesDatabase
     public function __construct(array $options = [])
     {
         $this->options = array_merge([
-            'file'    => \option('bnomei.page-sqlite.file'),
+            'file' => \option('bnomei.page-sqlite.file'),
         ], $options);
 
         foreach ($this->options as $key => $call) {
@@ -28,9 +28,9 @@ final class SQLitePagesDatabase
         }
 
         $target = $this->options['file'];
-        if (! F::exists($target)) {
+        if (!F::exists($target)) {
             $db = new \SQLite3($target);
-            $db->exec("CREATE TABLE IF NOT EXISTS pages (id varchar(32) primary key, modified_at integer, data json)");
+            $db->exec("CREATE TABLE IF NOT EXISTS pages (id TEXT primary key unique, modified_at INTEGER, data TEXT)");
             $db->close();
         }
 
@@ -66,9 +66,11 @@ final class SQLitePagesDatabase
         $this->remove($key);
 
         $item = new Obj([
-           'id' => $key,
-           'modified_at' => $modified,
-           'data' => json_encode($value),
+            'id' => $key,
+            'modified_at' => $modified,
+            'data' => json_encode(array_map(function ($value) {
+                return htmlspecialchars($value, ENT_QUOTES);
+            }, $value)),
         ]);
 
         return $this->database->query("
@@ -104,7 +106,9 @@ final class SQLitePagesDatabase
         }
 
         // return the pure value
-        return json_decode($value->data, true);
+        return array_map(function ($value) {
+            return htmlspecialchars_decode($value);
+        }, json_decode($value->data, true));
     }
 
     public function remove(string $key): bool

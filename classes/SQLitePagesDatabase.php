@@ -69,7 +69,7 @@ final class SQLitePagesDatabase
             'id' => $key,
             'modified_at' => $modified,
             'data' => json_encode(array_map(function ($value) {
-                return $value ? htmlspecialchars(strval($value), ENT_QUOTES) : '';
+                return $value ? htmlspecialchars(strval($value), ENT_QUOTES) : null;
             }, $value)),
         ]);
 

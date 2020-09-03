@@ -9,7 +9,7 @@ use Kirby\Cms\Page;
 class SQLitePage extends Page
 {
     private static $singleton;
-    private static function getSingleton(): ?SQLitePagesDatabase
+    public static function singleton(): ?SQLitePagesDatabase
     {
         if (!self::$singleton) {
             self::$singleton = new SQLitePagesDatabase();
@@ -55,12 +55,8 @@ class SQLitePage extends Page
      */
     public function readContentCache(string $languageCode = null): ?array
     {
-        $cache = static::getSingleton();
+        $cache = static::singleton();
         if (! $cache) {
-            return null;
-        }
-        if (\option('debug')) {
-            $cache->flush();
             return null;
         }
         return $cache->get(
@@ -82,7 +78,7 @@ class SQLitePage extends Page
      */
     public function writeContentCache(array $data, string $languageCode = null): bool
     {
-        $cache = static::getSingleton();
+        $cache = static::singleton();
         if (! $cache) {
             return true;
         }
@@ -95,7 +91,7 @@ class SQLitePage extends Page
 
     public function delete(bool $force = false): bool
     {
-        $cache = static::getSingleton();
+        $cache = static::singleton();
         if ($cache) {
             foreach (kirby()->languages() as $language) {
                 $cache->remove(

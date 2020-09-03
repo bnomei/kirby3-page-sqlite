@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace Bnomei;
 
 use Kirby\Cache\FileCache;
-use Kirby\Database\Database;
 use Kirby\Toolkit\A;
-use Kirby\Toolkit\F;
 use Kirby\Toolkit\Obj;
 
 final class SQLitePagesDatabase
 {
-    /** @var Database */
+    /** @var \SQLite3 */
     private $database;
 
     public function __construct(array $options = [])
@@ -28,16 +26,24 @@ final class SQLitePagesDatabase
         }
 
         $target = $this->options['file'];
-        if (!F::exists($target)) {
-            $db = new \SQLite3($target);
-            $db->exec("CREATE TABLE IF NOT EXISTS pages (id TEXT primary key unique, modified_at INTEGER, data TEXT)");
-            $db->close();
+        $this->database = new \SQLite3($target);
+        if (\SQLite3::version() >= 3007001) {
+            $this->database->exec("PRAGMA busy_timeout=1000");
+            $this->database->exec("PRAGMA journal_mode = WAL");
         }
+        $this->database->exec("CREATE TABLE IF NOT EXISTS pages (id TEXT primary key unique, modified_at INTEGER, data TEXT)");
 
-        $this->database = new Database([
-            'type' => 'sqlite',
-            'database' => $target,
-        ]);
+        if (\option('debug')) {
+            $this->flush();
+        }
+    }
+
+    public function __destruct()
+    {
+        if (\SQLite3::version() >= 3007001) {
+            $this->database()->exec('PRAGMA main.wal_checkpoint(TRUNCATE);');
+        }
+        $this->database()->close();
     }
 
     public function databaseFile(): string
@@ -45,7 +51,7 @@ final class SQLitePagesDatabase
         return $this->options['file'];
     }
 
-    public function database(): Database
+    public function database(): \SQLite3
     {
         return $this->database;
     }
@@ -83,10 +89,10 @@ final class SQLitePagesDatabase
 
     public function retrieve(string $key): ?Obj
     {
-        foreach ($this->database->query("SELECT * FROM pages WHERE id = '${key}'") as $obj) {
-            return $obj;
-        }
-        return null;
+        $results = $this->database->query("SELECT * FROM pages WHERE id = '${key}'")
+            ->fetchArray(SQLITE3_ASSOC);
+
+        return $results ? new Obj($results) : null;
     }
 
     public function get(string $key, int $modified, $default = null)
@@ -114,12 +120,12 @@ final class SQLitePagesDatabase
     public function remove(string $key): bool
     {
         $str = "DELETE FROM pages WHERE id = '${key}'";
-        return $this->database->query($str) !== false;
+        return $this->database->exec($str) !== false;
     }
 
     public function flush(): bool
     {
-        return $this->database->query("DELETE FROM pages WHERE id != ''") !== false;
+        return $this->database->exec("DELETE FROM pages WHERE id != ''") !== false;
     }
 
     public function root(): string

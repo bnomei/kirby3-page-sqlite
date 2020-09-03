@@ -27,7 +27,7 @@ final class SQLitePagesDatabase
 
         $target = $this->options['file'];
         $this->database = new \SQLite3($target);
-        if (\SQLite3::version() >= 3007001) {
+        if (\SQLite3::version() >= 3007001 && \option('bnomei.page-sqlite.wal')) {
             $this->database->exec("PRAGMA busy_timeout=1000");
             $this->database->exec("PRAGMA journal_mode = WAL");
         }
@@ -40,7 +40,7 @@ final class SQLitePagesDatabase
 
     public function __destruct()
     {
-        if (\SQLite3::version() >= 3007001) {
+        if (\SQLite3::version() >= 3007001 && \option('bnomei.page-sqlite.wal')) {
             $this->database()->exec('PRAGMA main.wal_checkpoint(TRUNCATE);');
         }
         $this->database()->close();

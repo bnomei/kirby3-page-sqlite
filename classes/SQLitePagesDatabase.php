@@ -113,7 +113,7 @@ final class SQLitePagesDatabase
 
         // return the pure value
         return array_map(function ($value) {
-            return $value ? htmlspecialchars_decode(strval($value)) : $value;
+            return $value ? htmlspecialchars_decode(strval($value)) : '';
         }, json_decode($value->data, true));
     }
 

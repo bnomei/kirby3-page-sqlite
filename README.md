@@ -50,7 +50,6 @@ $checkIfContentFileIsSQLiteCached = $page->isSQLitePage(); // bool
 | bnomei.page-sqlite.            | Default        | Description               |            
 |---------------------------|----------------|---------------------------|
 | file | `callback` |  |
-| wal | `true` | sqlite WAL for faster IO |
 
 
 ## Dependencies

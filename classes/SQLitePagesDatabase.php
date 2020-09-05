@@ -6,49 +6,68 @@ namespace Bnomei;
 
 use Kirby\Cache\FileCache;
 use Kirby\Toolkit\A;
+use Kirby\Toolkit\F;
 use Kirby\Toolkit\Obj;
+use SQLite3;
 
 final class SQLitePagesDatabase
 {
     /** @var \SQLite3 */
     private $database;
+    private $transactionsCount = 0;
+    private $options;
 
     public function __construct(array $options = [])
     {
-        $this->options = array_merge([
-            'file' => \option('bnomei.page-sqlite.file'),
-        ], $options);
+        $this->setOptions($options);
+        $this->loadDatabase();
 
-        foreach ($this->options as $key => $call) {
-            if (!is_string($call) && is_callable($call) && in_array($key, ['file'])) {
-                $this->options[$key] = $call();
-            }
-        }
-
-        $target = $this->options['file'];
-        $this->database = new \SQLite3($target);
-        if (\SQLite3::version() >= 3007001 && \option('bnomei.page-sqlite.wal')) {
-            $this->database->exec("PRAGMA busy_timeout=1000");
-            $this->database->exec("PRAGMA journal_mode = WAL");
-        }
         $this->database->exec("CREATE TABLE IF NOT EXISTS pages (id TEXT primary key unique, modified_at INTEGER, data TEXT)");
 
-        if (\option('debug')) {
+        if ($this->options['debug']) {
             $this->flush();
         }
+
+        $this->beginTransaction();
     }
 
     public function __destruct()
     {
-        if (\SQLite3::version() >= 3007001 && \option('bnomei.page-sqlite.wal')) {
-            $this->database()->exec('PRAGMA main.wal_checkpoint(TRUNCATE);');
-        }
-        $this->database()->close();
+        $this->endTransaction();
+        $this->applyPragmas('pragmas-destruct');
+        $this->database->close();
     }
 
-    public function databaseFile(): string
+    private function loadDatabase()
     {
-        return $this->options['file'];
+        $file = $this->options['file'];
+        try {
+            $this->database = new SQLite3($file);
+        } catch (\Exception $exception) {
+            F::remove($file);
+            F::remove($file . '-wal');
+            F::remove($file . '-shm');
+            $this->database = new SQLite3($file);
+            throw new \Exception($exception->getMessage());
+        }
+    }
+
+    private function applyPragmas(string $pragmas)
+    {
+        foreach ($this->options[$pragmas] as $pragma) {
+            $this->database->exec($pragma);
+        }
+    }
+
+    private function beginTransaction()
+    {
+        $this->database->exec("BEGIN TRANSACTION;");
+        $this->transactionsCount++;
+    }
+
+    private function endTransaction()
+    {
+        $this->database->exec("END TRANSACTION;");
     }
 
     public function database(): \SQLite3
@@ -128,11 +147,6 @@ final class SQLitePagesDatabase
         return $this->database->exec("DELETE FROM pages WHERE id != ''") !== false;
     }
 
-    public function root(): string
-    {
-        return realpath(__DIR__ . '/../') . '/cache';
-    }
-
     public static function cacheFolder(): string
     {
         $cache = kirby()->cache('bnomei.page-sqlite');
@@ -142,5 +156,25 @@ final class SQLitePagesDatabase
         // @codeCoverageIgnoreStart
         return kirby()->roots()->cache();
         // @codeCoverageIgnoreEnd
+    }
+
+    private function setOptions(array $options): void
+    {
+        $this->options = array_merge([
+            'file' => \option('bnomei.page-sqlite.file'),
+            'debug' => \option('debug'),
+            'pragmas-construct' => \option('bnomei.page-sqlite.pragmas-construct'),
+            'pragmas-destruct' => \option('bnomei.page-sqlite.pragmas-destruct'),
+        ], $options);
+
+        foreach ($this->options as $key => $call) {
+            if (!is_string($call) && is_callable($call) && in_array($key, [
+                    'file',
+                    'pragmas-construct',
+                    'pragmas-destruct',
+                ])) {
+                $this->options[$key] = $call();
+            }
+        }
     }
 }

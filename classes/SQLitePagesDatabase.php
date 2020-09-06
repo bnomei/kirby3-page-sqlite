@@ -5,82 +5,44 @@ declare(strict_types=1);
 namespace Bnomei;
 
 use Kirby\Cache\FileCache;
+use Kirby\Database\Database;
 use Kirby\Toolkit\A;
 use Kirby\Toolkit\F;
 use Kirby\Toolkit\Obj;
-use SQLite3;
 
 final class SQLitePagesDatabase
 {
-    /** @var \SQLite3 */
+    /** @var Database */
     private $database;
-    private $transactionsCount = 0;
-    private $options;
 
     public function __construct(array $options = [])
     {
-        $this->setOptions($options);
-        $this->loadDatabase();
+        $this->options = array_merge([
+            'file' => \option('bnomei.page-sqlite.file'),
+        ], $options);
 
-        $this->database->exec("CREATE TABLE IF NOT EXISTS pages (id TEXT primary key unique, modified_at INTEGER, data TEXT)");
-
-        if ($this->options['debug']) {
-            $this->flush();
+        foreach ($this->options as $key => $call) {
+            if (!is_string($call) && is_callable($call) && in_array($key, ['file'])) {
+                $this->options[$key] = $call();
+            }
         }
 
-        $this->beginTransaction();
-    }
-
-    public function __destruct()
-    {
-        $this->endTransaction();
-        $this->applyPragmas('pragmas-destruct');
-        $this->database->close();
-    }
-
-    private function loadDatabase()
-    {
-        $file = $this->options['file'];
-        try {
-            $this->database = new SQLite3($file);
-        } catch (\Exception $exception) {
-            F::remove($file);
-            F::remove($file . '-wal');
-            F::remove($file . '-shm');
-            $this->database = new SQLite3($file);
-            throw new \Exception($exception->getMessage());
+        $target = $this->options['file'];
+        if (!F::exists($target)) {
+            $db = new \SQLite3($target);
+            $db->exec("CREATE TABLE IF NOT EXISTS pages (id TEXT primary key unique, modified_at INTEGER, data TEXT)");
+            $db->close();
         }
+
+        $this->database = new Database([
+            'type' => 'sqlite',
+            'database' => $target,
+        ]);
     }
 
-    private function applyPragmas(string $pragmas)
-    {
-        foreach ($this->options[$pragmas] as $pragma) {
-            $this->database->exec($pragma);
-        }
-    }
-
-    private function beginTransaction()
-    {
-        $this->database->exec("BEGIN TRANSACTION;");
-        $this->transactionsCount++;
-    }
-
-    private function endTransaction()
-    {
-        $this->database->exec("END TRANSACTION;");
-    }
-
-    public function database(): \SQLite3
+    public function database(): Database
     {
         return $this->database;
-    }
-
-    public function option(?string $key = null)
-    {
-        if ($key) {
-            return A::get($this->options, $key);
-        }
-        return $this->options;
     }
 
     /**
@@ -94,7 +56,7 @@ final class SQLitePagesDatabase
             'id' => $key,
             'modified_at' => $modified,
             'data' => json_encode(array_map(function ($value) {
-                return $value ? htmlspecialchars(strval($value), ENT_QUOTES) : null;
+                return $value ? htmlspecialchars(strval($value), ENT_QUOTES) : '';
             }, $value)),
         ]);
 
@@ -108,10 +70,10 @@ final class SQLitePagesDatabase
 
     public function retrieve(string $key): ?Obj
     {
-        $results = $this->database->query("SELECT * FROM pages WHERE id = '${key}'")
-            ->fetchArray(SQLITE3_ASSOC);
-
-        return $results ? new Obj($results) : null;
+        foreach ($this->database->query("SELECT * FROM pages WHERE id = '${key}'") as $obj) {
+            return $obj;
+        }
+        return null;
     }
 
     public function get(string $key, int $modified, $default = null)
@@ -132,19 +94,19 @@ final class SQLitePagesDatabase
 
         // return the pure value
         return array_map(function ($value) {
-            return $value ? htmlspecialchars_decode(strval($value)) : '';
+            return $value ? htmlspecialchars_decode(strval($value)) : $value;
         }, json_decode($value->data, true));
     }
 
     public function remove(string $key): bool
     {
         $str = "DELETE FROM pages WHERE id = '${key}'";
-        return $this->database->exec($str) !== false;
+        return $this->database->query($str) !== false;
     }
 
     public function flush(): bool
     {
-        return $this->database->exec("DELETE FROM pages WHERE id != ''") !== false;
+        return $this->database->query("DELETE FROM pages WHERE id != ''") !== false;
     }
 
     public static function cacheFolder(): string
@@ -156,25 +118,5 @@ final class SQLitePagesDatabase
         // @codeCoverageIgnoreStart
         return kirby()->roots()->cache();
         // @codeCoverageIgnoreEnd
-    }
-
-    private function setOptions(array $options): void
-    {
-        $this->options = array_merge([
-            'file' => \option('bnomei.page-sqlite.file'),
-            'debug' => \option('debug'),
-            'pragmas-construct' => \option('bnomei.page-sqlite.pragmas-construct'),
-            'pragmas-destruct' => \option('bnomei.page-sqlite.pragmas-destruct'),
-        ], $options);
-
-        foreach ($this->options as $key => $call) {
-            if (!is_string($call) && is_callable($call) && in_array($key, [
-                    'file',
-                    'pragmas-construct',
-                    'pragmas-destruct',
-                ])) {
-                $this->options[$key] = $call();
-            }
-        }
     }
 }
